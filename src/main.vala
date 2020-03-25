@@ -1,8 +1,8 @@
 class Field : Object, Json.Serializable {
     public string name { get; set; }
-    public string typename { get; set; }
+    public string typename;
     public bool required { get; set; default = false; }
-    public string description { get; set; }
+    public string? description { get; set; }
 
     ParamSpec tps = new ParamSpecString ("type", "type", "blurb", null, ParamFlags.READWRITE);
 
@@ -23,21 +23,11 @@ class Field : Object, Json.Serializable {
 }
 
 class Model : Object, Json.Serializable {
-    public string? description { get; set; default = ""; }
+    public string? description { get; set; }
     public GenericArray<Field> fields { get; set; default = new GenericArray<Field>(); }
-
-    //  public override void Json.Serializable.set_property (ParamSpec pspec, Value value) {
-    //      info (@"setting $(pspec.get_name ())");
-    //      base.set_property (pspec.get_name (), value);
-    //  }
-
-    //  public override unowned ParamSpec? find_property (string name) {
-    //      return this.get_class ().find_property (name);
-    //  }
 
     public override bool deserialize_property (string prop_name, out Value value, ParamSpec pspec, Json.Node property_node) {
         if (prop_name == "description") {
-            //  value = Value (pspec.value_type);
             return default_deserialize_property (prop_name, out value, pspec, property_node);
         } else if (prop_name == "fields") {
             var fields = new GenericArray<Field> ();
@@ -68,7 +58,7 @@ int main(string[] args) {
     Json.Object? models = parser.get_root ().get_object ().get_object_member ("models");
     models.foreach_member ((obj, member, node) => {
         var model = Json.gobject_deserialize (typeof (Model), node) as Model;
-        print (@"Model: $member\n");
+        print (@"Model: $member - $(model.description ?? "")\n");
         model.fields.foreach ((field) => {
             print (@"\t$(field.name): $(field.typename)\n");
         });

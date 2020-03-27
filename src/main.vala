@@ -72,7 +72,7 @@ https://github.com/benwaffle/vala-gen-json)
     models.foreach_member ((obj, member, node) => {
         var model = Json.gobject_deserialize (typeof (Model), node) as Model;
 
-        output.printf(@"class $(modelToClassName(member)) {\n");
+        output.printf(@"class $(modelToClassName(member)) : GLib.Object, Json.Serializable {\n");
         //  print (@"Model: $member - $(model.description ?? "")\n");
         model.fields.foreach ((field) => {
             output.printf(@"public $(field.typename)$(field.required ? "" : "?") $(field.name) { get; set; }\n");

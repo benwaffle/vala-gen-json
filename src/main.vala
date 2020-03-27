@@ -75,11 +75,12 @@ https://github.com/benwaffle/vala-gen-json)
         output.printf(@"class $(modelToClassName(member)) {\n");
         //  print (@"Model: $member - $(model.description ?? "")\n");
         model.fields.foreach ((field) => {
-            output.printf(@"public $(field.typename) $(field.name)$(field.required ? "" : "?") { get; set; }\n");
+            output.printf(@"public $(field.typename)$(field.required ? "" : "?") $(field.name) { get; set; }\n");
             //  print (@"\t$(field.name): $(field.typename) $(field.required ? "" : "?") - $(field.description ?? "")\n");
         });
         output.printf("}\n");
     });
+    output.printf("}\n");
 
     return 0;
 }

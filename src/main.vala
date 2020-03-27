@@ -26,9 +26,13 @@ class Model : Object, Json.Serializable {
     public string? description { get; set; }
     public GenericArray<Field> fields { get; set; default = new GenericArray<Field>(); }
 
-    public override bool deserialize_property (string prop_name, out Value value, ParamSpec pspec, Json.Node property_node) {
+    public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
         if (prop_name == "description") {
-            return default_deserialize_property (prop_name, out value, pspec, property_node);
+            // works
+            //  val = property_node.get_string ();
+            //  return true;
+            // doesn't work
+            return default_deserialize_property (prop_name, out val, pspec, property_node);
         } else if (prop_name == "fields") {
             var fields = new GenericArray<Field> ();
             property_node.get_array ().foreach_element ((arr, idx, node) => {
@@ -36,7 +40,7 @@ class Model : Object, Json.Serializable {
                 assert (field != null);
                 fields.add (field);
             });
-            value = fields;
+            val = fields;
             return true;
         } else {
             warning (@"unknown field $prop_name\n");

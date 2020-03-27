@@ -28,10 +28,6 @@ class Model : Object, Json.Serializable {
 
     public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
         if (prop_name == "description") {
-            // works
-            //  val = property_node.get_string ();
-            //  return true;
-            // doesn't work
             return default_deserialize_property (prop_name, out val, pspec, property_node);
         } else if (prop_name == "fields") {
             var fields = new GenericArray<Field> ();

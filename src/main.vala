@@ -45,8 +45,55 @@ class Model : Object, Json.Serializable {
     }
 }
 
-string modelToClassName(string modelName) {
-    return /(?:^|_)(.)/.replace (modelName, -1, 0, "\\U\\1");
+class EnumValue : Object {
+    public string name { get; set; }
+}
+
+class Enum : Object, Json.Serializable {
+    public EnumValue[] values;
+
+    ParamSpec valuesPspec = new ParamSpec.internal (typeof (EnumValue[]), "values", "values", "blurb", ParamFlags.READWRITE);
+
+    public override unowned ParamSpec? find_property (string name) {
+        if (name == "values") {
+            return valuesPspec;
+        }
+        return this.get_class ().find_property (name);
+    }
+
+    public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
+        if (prop_name == "values") {
+            var res = new EnumValue[property_node.get_array ().get_length ()];
+            property_node.get_array ().foreach_element ((arr, idx, node) => {
+                var enumvalue = Json.gobject_deserialize (typeof (EnumValue), node) as EnumValue;
+                assert (enumvalue != null);
+                res[idx] = enumvalue;
+            });
+            val = Value (pspec.value_type);
+            val.set_boxed (res);
+            return true;
+        } else {
+            warning (@"unknown field $prop_name\n");
+            return false;
+        }
+    }
+}
+
+string typeToClassName (string typeName) {
+    switch (typeName) {
+        case "string": return "string";
+        case "boolean": return "bool";
+        case "long": return "long";
+        default: return /(?:^|_)(.)/.replace (typeName, -1, 0, "\\U\\1");
+    }
+}
+
+string typeNameToVala (string typeName) {
+    MatchInfo mi;
+    if (/^\[(.+)\]$/.match (typeName, 0, out mi)) {
+        return typeNameToVala (mi.fetch (1)) + "[]";
+    }
+    return typeToClassName (typeName);
 }
 
 int main(string[] args) {
@@ -68,17 +115,28 @@ https://github.com/benwaffle/vala-gen-json)
 
     output.printf ("\nnamespace Apibuilder {\n");
 
+    Json.Object? enums = parser.get_root ().get_object ().get_object_member ("enums");
+    enums.foreach_member ((obj, member, node) => {
+        var enum = Json.gobject_deserialize (typeof (Enum), node) as Enum;
+
+        output.printf(@"\tenum $(typeToClassName (member)) {\n");
+        foreach (var value in enum.values) {
+            output.printf(@"\t\t$(value.name.up ())\n");
+        }
+        output.printf("\t}\n");
+    });
+    output.printf("}\n");
+
+
     Json.Object? models = parser.get_root ().get_object ().get_object_member ("models");
     models.foreach_member ((obj, member, node) => {
         var model = Json.gobject_deserialize (typeof (Model), node) as Model;
 
-        output.printf(@"class $(modelToClassName(member)) : GLib.Object, Json.Serializable {\n");
-        //  print (@"Model: $member - $(model.description ?? "")\n");
+        output.printf(@"\tclass $(typeToClassName (member)) : GLib.Object, Json.Serializable {\n");
         model.fields.foreach ((field) => {
-            output.printf(@"public $(field.typename)$(field.required ? "" : "?") $(field.name) { get; set; }\n");
-            //  print (@"\t$(field.name): $(field.typename) $(field.required ? "" : "?") - $(field.description ?? "")\n");
+            output.printf(@"\t\tpublic $(typeNameToVala (field.typename))$(field.required ? "" : "?") $(field.name) { get; set; }\n");
         });
-        output.printf("}\n");
+        output.printf("\t}\n");
     });
     output.printf("}\n");
 

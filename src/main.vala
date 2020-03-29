@@ -4,7 +4,7 @@ class Field : Object, Json.Serializable {
     public bool required { get; set; default = true; }
     public string? description { get; set; }
 
-    ParamSpec tps = new ParamSpecString ("type", "type", "blurb", null, ParamFlags.READWRITE);
+    ParamSpec tps = new ParamSpecString ("type", "type", "type", null, ParamFlags.READWRITE);
 
     public override void set_property (ParamSpec pspec, Value value) {
         if (pspec.get_name () == "type") {
@@ -109,11 +109,11 @@ https://github.com/benwaffle/vala-gen-json)
     enums.foreach_member ((obj, member, node) => {
         var enum = Json.gobject_deserialize (typeof (Enum), node) as Enum;
 
-        output.printf(@"\tenum $(typeToClassName (member)) {\n");
+        output.printf (@"\tenum $(typeToClassName (member)) {\n");
         enum.values.foreach (value => {
-            output.printf(@"\t\t$(value.name.up ()),\n");
+            output.printf (@"\t\t$(value.name.up ()),\n");
         });
-        output.printf("\t}\n");
+        output.printf ("\t}\n");
     });
 
     Json.Object? models = parser.get_root ().get_object ().get_object_member ("models");
@@ -122,12 +122,17 @@ https://github.com/benwaffle/vala-gen-json)
 
         output.printf(@"\tclass $(typeToClassName (member)) : GLib.Object, Json.Serializable {\n");
         model.fields.foreach ((field) => {
-            output.printf(@"\t\tpublic $(typeNameToVala (field.typename))$(field.required ? "" : "?") $(field.name) { get; set; }\n");
+            if (field.description != null) {
+                output.printf ( "\t\t/**\n");
+                output.printf (@"\t\t * $(field.description)\n");
+                output.printf ( "\t\t */\n");
+            }
+            output.printf (@"\t\tpublic $(typeNameToVala (field.typename))$(field.required ? "" : "?") $(field.name) { get; set; }\n");
         });
-        output.printf("\t}\n");
+        output.printf ("\t}\n");
     });
 
-    output.printf("}\n");
+    output.printf ("}\n");
 
     return 0;
 }

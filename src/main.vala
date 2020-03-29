@@ -1,14 +1,12 @@
 class Field : Object, Json.Serializable {
     public string name { get; set; }
-    public string typename;
+    public string type_ { get; set; }
     public bool required { get; set; default = true; }
     public string? description { get; set; }
 
-    ParamSpec tps = new ParamSpecString ("type", "type", "type", null, ParamFlags.READWRITE);
-
     public override void set_property (ParamSpec pspec, Value value) {
         if (pspec.get_name () == "type") {
-            typename = (string) value;
+            type_ = (string) value;
         } else {
             base.set_property (pspec.get_name (), value);
         }
@@ -16,7 +14,7 @@ class Field : Object, Json.Serializable {
 
     public override unowned ParamSpec? find_property (string name) {
         if (name == "type") {
-            return tps;
+            return this.get_class ().find_property ("type_");
         }
         return this.get_class ().find_property (name);
     }
@@ -86,6 +84,14 @@ string typeNameToVala (string typeName) {
     return typeToClassName (typeName);
 }
 
+string validVariableName (string name) {
+    string[] reserved = {"type"};
+    if (name in reserved) {
+        return name + "_";
+    }
+    return name;
+}
+
 int main(string[] args) {
     var parser = new Json.Parser ();
     // TODO arg parsing
@@ -127,7 +133,7 @@ https://github.com/benwaffle/vala-gen-json)
                 output.printf (@"\t\t * $(field.description)\n");
                 output.printf ( "\t\t */\n");
             }
-            output.printf (@"\t\tpublic $(typeNameToVala (field.typename))$(field.required ? "" : "?") $(field.name) { get; set; }\n");
+            output.printf (@"\t\tpublic $(typeNameToVala (field.type_))$(field.required ? "" : "?") $(validVariableName(field.name)) { get; set; }\n");
         });
         output.printf ("\t}\n");
     });

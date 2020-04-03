@@ -117,23 +117,59 @@ void deserializeField (FileStream output, Field field) {
 
     string className = typeToClassName (t);
 
-    output.printf (@"\t\t\t\tcase \"$(field.name)\":\n");
-    output.printf (@"\t\t\t\t\tvar res = new Gee.ArrayList<$className> ();\n");
-    output.printf ( "\t\t\t\t\tproperty_node.get_array ().foreach_element ((arr, idx, node) => {\n");
+    output.printf (@"case \"$(field.name)\":\n");
+    output.printf (@"var res = new Gee.ArrayList<$className> ();\n");
+    output.printf ( "property_node.get_array ().foreach_element ((arr, idx, node) => {\n");
     if (t == "string") {
-        output.printf ( "\t\t\t\t\t    res.add (node.get_string ());\n");
+        output.printf ( "    res.add (node.get_string ());\n");
     } else if (t == "number") {
-        output.printf ( "\t\t\t\t\t    res.add (node.get_number ());\n");
+        output.printf ( "    res.add (node.get_number ());\n");
     } else if (t == "boolean") {
-        output.printf ( "\t\t\t\t\t    res.add (node.get_boolean ());\n");
+        output.printf ( "    res.add (node.get_boolean ());\n");
     } else {
-        output.printf (@"\t\t\t\t\t    var item = Json.gobject_deserialize (typeof ($className), node) as $className;\n");
-        output.printf ( "\t\t\t\t\t    assert (item != null);\n");
-        output.printf ( "\t\t\t\t\t    res.add (item);\n");
+        output.printf (@"    var item = Json.gobject_deserialize (typeof ($className), node) as $className;\n");
+        output.printf ( "    assert (item != null);\n");
+        output.printf ( "    res.add (item);\n");
     }
-    output.printf ( "\t\t\t\t\t});\n");
-    output.printf ( "\t\t\t\t\tval = res;\n");
-    output.printf ( "\t\t\t\t\treturn true;\n");
+    output.printf ( "});\n");
+    output.printf ( "val = res;\n");
+    output.printf ( "return true;\n");
+}
+
+void setProperty (FileStream output, Model model) {
+    output.printf ("switch (pspec.get_name ()) {\n");
+    foreach (Field field in model.fields) {
+        if (field.name in reservedWords) {
+            output.printf (@"case \"$(field.name)\":\n");
+            output.printf (@"base.set_property (\"$(validVariableName (field.name))\", value);\n");
+            output.printf ("break;\n");
+        }
+    }
+    output.printf ("""
+        default:
+            base.set_property (pspec.get_name (), value);
+            break;
+    }
+    """);
+}
+
+void findProperty (FileStream output, Model model) {
+    //  if (name == "type") {
+    //      return this.get_class ().find_property ("type_");
+    //  }
+    //  return this.get_class ().find_property (name);
+    output.printf ("switch (name) {\n");
+    foreach (Field field in model.fields) {
+        if (field.name in reservedWords) {
+            output.printf (@"case \"$(field.name)\":\n");
+            output.printf (@"return this.get_class ().find_property (\"$(validVariableName (field.name))\");\n");
+        }
+    }
+    output.printf ("""
+        default:
+            return this.get_class ().find_property (name);
+    }
+    """);
 }
 
 int main(string[] args) {
@@ -159,11 +195,11 @@ https://github.com/benwaffle/vala-gen-json)
     enums.foreach_member ((obj, member, node) => {
         var enum = Json.gobject_deserialize (typeof (Enum), node) as Enum;
 
-        output.printf (@"\tenum $(typeToClassName (member)) {\n");
+        output.printf (@"enum $(typeToClassName (member)) {\n");
         foreach (EnumValue value in enum.values) {
-            output.printf (@"\t\t$(value.name.up ()),\n");
+            output.printf (@"$(value.name.up ()),\n");
         }
-        output.printf ("\t}\n");
+        output.printf ("}\n");
     });
 
     Json.Object? models = parser.get_root ().get_object ().get_object_member ("models");
@@ -171,16 +207,16 @@ https://github.com/benwaffle/vala-gen-json)
         var model = Json.gobject_deserialize (typeof (Model), node) as Model;
 
         if (model.description != null) {
-            output.printf ( "\t\t/**\n");
-            output.printf (@"\t\t * $(model.description)\n");
-            output.printf ( "\t\t */\n");
+            output.printf ( "/**\n");
+            output.printf (@" * $(model.description)\n");
+            output.printf ( " */\n");
         }
-        output.printf(@"\tclass $(typeToClassName (member)) : GLib.Object, Json.Serializable {\n");
+        output.printf(@"class $(typeToClassName (member)) : GLib.Object, Json.Serializable {\n");
         foreach (Field field in model.fields) {
             if (field.description != null) {
-                output.printf ( "\t\t/**\n");
-                output.printf (@"\t\t * $(field.description)\n");
-                output.printf ( "\t\t */\n");
+                output.printf ( "/**\n");
+                output.printf (@" * $(field.description)\n");
+                output.printf ( " */\n");
             }
             var typeName = typeNameToVala (field.type_);
             var requiredModifier = "";
@@ -191,20 +227,32 @@ https://github.com/benwaffle/vala-gen-json)
                     requiredModifier = "?";
                 }
             }
-            output.printf (@"\t\tpublic $(typeNameToVala (field.type_))$(field.required ? "" : "?") $(validVariableName(field.name)) { get; set; }\n");
+            output.printf (@"public $(typeNameToVala (field.type_))$(field.required ? "" : "?") $(validVariableName(field.name)) { get; set; }\n");
         }
 
-        output.printf ("\n\t\tpublic override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {\n");
-        output.printf ("\t\t\tswitch (prop_name) {\n");
-        foreach (Field field in model.fields) {
-            deserializeField (output, field);
-        }
-        output.printf ("\t\t\t\tdefault:\n");
-        output.printf ("\t\t\t\treturn default_deserialize_property (prop_name, out val, pspec, property_node);\n");
-        output.printf ("\t\t\t}\n");
-        output.printf ("\t\t}\n");
+        if (model.fields.any_match (field => field.name in reservedWords)) {
+            output.printf ("public override void set_property (ParamSpec pspec, Value value) {\n");
+            setProperty (output, model);
+            output.printf ("}\n");
 
-        output.printf ("\t}\n");
+            output.printf ("public override unowned ParamSpec? find_property (string name) {\n");
+            findProperty (output, model);
+            output.printf ("}\n");
+        }
+
+        if (model.fields.any_match (f => arrayType (f.type_) != null)) {
+            output.printf ("\npublic override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {\n");
+            output.printf ("switch (prop_name) {\n");
+            foreach (Field field in model.fields) {
+                deserializeField (output, field);
+            }
+            output.printf ("default:\n");
+            output.printf ("return default_deserialize_property (prop_name, out val, pspec, property_node);\n");
+            output.printf ("}\n");
+            output.printf ("}\n");
+        }
+
+        output.printf ("}\n");
     });
 
     output.printf ("}\n");

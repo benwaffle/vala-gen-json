@@ -6,4 +6,6 @@ Uses a subset of the [apibuilder specification](https://app.apibuilder.io/doc/ap
 
 ## Testing
 
-ninja -C build && G_MESSAGES_DEBUG=all ./build/vala-gen-json spec/apibuilder-spec.json /dev/stdout
+```
+ninja -C build && G_MESSAGES_DEBUG=all ./build/vala-gen-json spec/apibuilder-spec.json /dev/stdout | uncrustify -c uncrustify.vala.cfg -l vala
+```

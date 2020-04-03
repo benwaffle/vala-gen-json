@@ -154,10 +154,6 @@ void setProperty (FileStream output, Model model) {
 }
 
 void findProperty (FileStream output, Model model) {
-    //  if (name == "type") {
-    //      return this.get_class ().find_property ("type_");
-    //  }
-    //  return this.get_class ().find_property (name);
     output.printf ("switch (name) {\n");
     foreach (Field field in model.fields) {
         if (field.name in reservedWords) {

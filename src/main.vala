@@ -137,35 +137,37 @@ void deserializeField (FileStream output, Field field) {
 }
 
 void setProperty (FileStream output, Model model) {
-    output.printf ("switch (pspec.get_name ()) {\n");
+    output.printf ("public override void set_property (ParamSpec pspec, Value value) {
+                    switch (pspec.get_name ()) {");
     foreach (Field field in model.fields) {
         if (field.name in reservedWords) {
-            output.printf (@"case \"$(field.name)\":\n");
-            output.printf (@"base.set_property (\"$(validVariableName (field.name))\", value);\n");
-            output.printf ("break;\n");
+            output.printf (@"case \"$(field.name)\":
+                                base.set_property (\"$(validVariableName (field.name))\", value);
+                                break;\n");
         }
     }
-    output.printf ("""
-        default:
-            base.set_property (pspec.get_name (), value);
-            break;
-    }
-    """);
+    output.printf ("
+            default:
+                base.set_property (pspec.get_name (), value);
+                break;
+        }
+    }");
 }
 
 void findProperty (FileStream output, Model model) {
-    output.printf ("switch (name) {\n");
+    output.printf ("public override unowned ParamSpec? find_property (string name) {
+                    switch (name) {\n");
     foreach (Field field in model.fields) {
         if (field.name in reservedWords) {
-            output.printf (@"case \"$(field.name)\":\n");
-            output.printf (@"return this.get_class ().find_property (\"$(validVariableName (field.name))\");\n");
+            output.printf (@"case \"$(field.name)\":
+                                return this.get_class ().find_property (\"$(validVariableName (field.name))\");\n");
         }
     }
-    output.printf ("""
-        default:
-            return this.get_class ().find_property (name);
-    }
-    """);
+    output.printf ("
+            default:
+                return this.get_class ().find_property (name);
+        }
+    }");
 }
 
 int main(string[] args) {
@@ -203,16 +205,16 @@ https://github.com/benwaffle/vala-gen-json)
         var model = Json.gobject_deserialize (typeof (Model), node) as Model;
 
         if (model.description != null) {
-            output.printf ( "/**\n");
-            output.printf (@" * $(model.description)\n");
-            output.printf ( " */\n");
+            output.printf (@"/**
+                              * $(model.description)
+                              */\n");
         }
         output.printf(@"class $(typeToClassName (member)) : GLib.Object, Json.Serializable {\n");
         foreach (Field field in model.fields) {
             if (field.description != null) {
-                output.printf ( "/**\n");
-                output.printf (@" * $(field.description)\n");
-                output.printf ( " */\n");
+                output.printf (@"/**
+                                  * $(field.description)
+                                  */\n");
             }
             var typeName = typeNameToVala (field.type_);
             var requiredModifier = "";
@@ -227,25 +229,21 @@ https://github.com/benwaffle/vala-gen-json)
         }
 
         if (model.fields.any_match (field => field.name in reservedWords)) {
-            output.printf ("public override void set_property (ParamSpec pspec, Value value) {\n");
             setProperty (output, model);
-            output.printf ("}\n");
 
-            output.printf ("public override unowned ParamSpec? find_property (string name) {\n");
             findProperty (output, model);
-            output.printf ("}\n");
         }
 
         if (model.fields.any_match (f => arrayType (f.type_) != null)) {
-            output.printf ("\npublic override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {\n");
-            output.printf ("switch (prop_name) {\n");
+            output.printf ("public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
+                                switch (prop_name) {\n");
             foreach (Field field in model.fields) {
                 deserializeField (output, field);
             }
-            output.printf ("default:\n");
-            output.printf ("return default_deserialize_property (prop_name, out val, pspec, property_node);\n");
-            output.printf ("}\n");
-            output.printf ("}\n");
+            output.printf ("default:
+                                return default_deserialize_property (prop_name, out val, pspec, property_node);
+                            }
+                        }\n");
         }
 
         output.printf ("}\n");

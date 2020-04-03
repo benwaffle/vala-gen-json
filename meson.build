@@ -6,4 +6,5 @@ executable('vala-gen-json',
            ]),
            dependencies: [
                dependency('json-glib-1.0'),
+               dependency('gee-0.8'),
            ])

@@ -3,10 +3,11 @@ class Field : Object, Json.Serializable {
     public string type_ { get; set; }
     public bool required { get; set; default = true; }
     public string? description { get; set; }
+    public string? default { get; set; }
 
     public override void set_property (ParamSpec pspec, Value value) {
         if (pspec.get_name () == "type") {
-            type_ = (string) value;
+            base.set_property ("type_", value);
         } else {
             base.set_property (pspec.get_name (), value);
         }
@@ -22,13 +23,11 @@ class Field : Object, Json.Serializable {
 
 class Model : Object, Json.Serializable {
     public string? description { get; set; }
-    public GenericArray<Field> fields { get; set; default = new GenericArray<Field>(); }
+    public Gee.ArrayList<Field> fields { get; set; default = new Gee.ArrayList<Field>(); }
 
     public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
-        if (prop_name == "description") {
-            return default_deserialize_property (prop_name, out val, pspec, property_node);
-        } else if (prop_name == "fields") {
-            var fields = new GenericArray<Field> (property_node.get_array ().get_length ());
+        if (prop_name == "fields") {
+            var fields = new Gee.ArrayList<Field> ();
             property_node.get_array ().foreach_element ((arr, idx, node) => {
                 var field = Json.gobject_deserialize (typeof (Field), node) as Field;
                 assert (field != null);
@@ -36,10 +35,9 @@ class Model : Object, Json.Serializable {
             });
             val = fields;
             return true;
-        } else {
-            warning (@"unknown field $prop_name\n");
-            return false;
         }
+
+        return default_deserialize_property (prop_name, out val, pspec, property_node);
     }
 }
 
@@ -48,11 +46,11 @@ class EnumValue : Object {
 }
 
 class Enum : Object, Json.Serializable {
-    public GenericArray<EnumValue> values { get; set; }
+    public Gee.ArrayList<EnumValue> values { get; set; }
 
     public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
         if (prop_name == "values") {
-            var values = new GenericArray<EnumValue> (property_node.get_array ().get_length ());
+            var values = new Gee.ArrayList<EnumValue> ();
             property_node.get_array ().foreach_element ((arr, idx, node) => {
                 var enumvalue = Json.gobject_deserialize (typeof (EnumValue), node) as EnumValue;
                 assert (enumvalue != null);
@@ -60,10 +58,9 @@ class Enum : Object, Json.Serializable {
             });
             val = values;
             return true;
-        } else {
-            warning (@"unknown field $prop_name\n");
-            return false;
         }
+
+        return default_deserialize_property (prop_name, out val, pspec, property_node);
     }
 }
 
@@ -71,25 +68,72 @@ string typeToClassName (string typeName) {
     switch (typeName) {
         case "string": return "string";
         case "boolean": return "bool";
-        case "long": return "long";
+        case "number": return "double";
         default: return /(?:^|_)(.)/.replace (typeName, -1, 0, "\\U\\1");
     }
 }
 
-string typeNameToVala (string typeName) {
+string? arrayType (string type) {
     MatchInfo mi;
-    if (/^\[(.+)\]$/.match (typeName, 0, out mi)) {
-        return "GenericArray<" + typeNameToVala (mi.fetch (1)) + ">";
+    if (/^\[(.+)\]$/.match (type, 0, out mi))
+        return mi.fetch (1);
+    return null;
+}
+
+string typeNameToVala (string typeName) {
+    string t;
+    if ((t = arrayType (typeName)) != null) {
+        return "Gee.ArrayList<" + typeNameToVala (t) + ">";
     }
     return typeToClassName (typeName);
 }
 
+const string[] reservedWords = {
+    "type",
+};
+
+const string[] primitiveTypes = {
+    "bool",
+};
+
+const string[] openapiTypes = {
+    "string",
+    "number",
+    "boolean",
+};
+
 string validVariableName (string name) {
-    string[] reserved = {"type"};
-    if (name in reserved) {
+    if (name in reservedWords) {
         return name + "_";
     }
     return name;
+}
+
+void deserializeField (FileStream output, Field field) {
+    string t;
+    if ((t = arrayType (field.type_)) == null) {
+        return;
+    }
+
+    string className = typeToClassName (t);
+
+    output.printf (@"\t\t\t\tcase \"$(field.name)\":\n");
+    output.printf (@"\t\t\t\t\tvar res = new Gee.ArrayList<$className> ();\n");
+    output.printf ( "\t\t\t\t\tproperty_node.get_array ().foreach_element ((arr, idx, node) => {\n");
+    if (t == "string") {
+        output.printf ( "\t\t\t\t\t    res.add (node.get_string ());\n");
+    } else if (t == "number") {
+        output.printf ( "\t\t\t\t\t    res.add (node.get_number ());\n");
+    } else if (t == "boolean") {
+        output.printf ( "\t\t\t\t\t    res.add (node.get_boolean ());\n");
+    } else {
+        output.printf (@"\t\t\t\t\t    var item = Json.gobject_deserialize (typeof ($className), node) as $className;\n");
+        output.printf ( "\t\t\t\t\t    assert (item != null);\n");
+        output.printf ( "\t\t\t\t\t    res.add (item);\n");
+    }
+    output.printf ( "\t\t\t\t\t});\n");
+    output.printf ( "\t\t\t\t\tval = res;\n");
+    output.printf ( "\t\t\t\t\treturn true;\n");
 }
 
 int main(string[] args) {
@@ -116,9 +160,9 @@ https://github.com/benwaffle/vala-gen-json)
         var enum = Json.gobject_deserialize (typeof (Enum), node) as Enum;
 
         output.printf (@"\tenum $(typeToClassName (member)) {\n");
-        enum.values.foreach (value => {
+        foreach (EnumValue value in enum.values) {
             output.printf (@"\t\t$(value.name.up ()),\n");
-        });
+        }
         output.printf ("\t}\n");
     });
 
@@ -126,15 +170,40 @@ https://github.com/benwaffle/vala-gen-json)
     models.foreach_member ((obj, member, node) => {
         var model = Json.gobject_deserialize (typeof (Model), node) as Model;
 
+        if (model.description != null) {
+            output.printf ( "\t\t/**\n");
+            output.printf (@"\t\t * $(model.description)\n");
+            output.printf ( "\t\t */\n");
+        }
         output.printf(@"\tclass $(typeToClassName (member)) : GLib.Object, Json.Serializable {\n");
-        model.fields.foreach ((field) => {
+        foreach (Field field in model.fields) {
             if (field.description != null) {
                 output.printf ( "\t\t/**\n");
                 output.printf (@"\t\t * $(field.description)\n");
                 output.printf ( "\t\t */\n");
             }
+            var typeName = typeNameToVala (field.type_);
+            var requiredModifier = "";
+            if (!field.required && field.default == null) {
+                if (typeName in primitiveTypes) {
+                    requiredModifier = "*";
+                } else {
+                    requiredModifier = "?";
+                }
+            }
             output.printf (@"\t\tpublic $(typeNameToVala (field.type_))$(field.required ? "" : "?") $(validVariableName(field.name)) { get; set; }\n");
-        });
+        }
+
+        output.printf ("\n\t\tpublic override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {\n");
+        output.printf ("\t\t\tswitch (prop_name) {\n");
+        foreach (Field field in model.fields) {
+            deserializeField (output, field);
+        }
+        output.printf ("\t\t\t\tdefault:\n");
+        output.printf ("\t\t\t\treturn default_deserialize_property (prop_name, out val, pspec, property_node);\n");
+        output.printf ("\t\t\t}\n");
+        output.printf ("\t\t}\n");
+
         output.printf ("\t}\n");
     });
 

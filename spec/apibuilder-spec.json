@@ -159,8 +159,8 @@
         { "name": "deprecation", "type": "deprecation", "required": false },
         { "name": "default", "type": "string", "required": false },
         { "name": "required", "type": "boolean" },
-        { "name": "minimum", "type": "long", "required": false },
-        { "name": "maximum", "type": "long", "required": false },
+        { "name": "minimum", "type": "number", "required": false },
+        { "name": "maximum", "type": "number", "required": false },
         { "name": "example", "type": "string", "required": false },
         { "name": "attributes", "type": "[attribute]", "default": "[]" },
         { "name": "annotations", "type": "[string]", "default": "[]", "required": false}
@@ -210,8 +210,8 @@
         { "name": "deprecation", "type": "deprecation", "required": false },
         { "name": "required", "type": "boolean" },
         { "name": "default", "type": "string", "required": false },
-        { "name": "minimum", "type": "long", "required": false },
-        { "name": "maximum", "type": "long", "required": false },
+        { "name": "minimum", "type": "number", "required": false },
+        { "name": "maximum", "type": "number", "required": false },
         { "name": "example", "type": "string", "required": false },
         { "name": "attributes", "type": "[attribute]", "required": false }
       ]

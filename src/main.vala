@@ -1,199 +1,148 @@
-//  class Field : Object, Json.Serializable {
-//      public string name { get; set; }
-//      public string type_ { get; set; }
-//      public bool required { get; set; default = true; }
-//      public string? description { get; set; }
-//      public string? default { get; set; }
-
-//      public override void set_property (ParamSpec pspec, Value value) {
-//          if (pspec.get_name () == "type") {
-//              base.set_property ("type_", value);
-//          } else {
-//              base.set_property (pspec.get_name (), value);
-//          }
-//      }
-
-//      public override unowned ParamSpec? find_property (string name) {
-//          if (name == "type") {
-//              return this.get_class ().find_property ("type_");
-//          }
-//          return this.get_class ().find_property (name);
-//      }
-//  }
-
-//  class Model : Object, Json.Serializable {
-//      public string? description { get; set; }
-//      public Gee.ArrayList<Field> fields { get; set; default = new Gee.ArrayList<Field>(); }
-
-//      public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
-//          if (prop_name == "fields") {
-//              var fields = new Gee.ArrayList<Field> ();
-//              property_node.get_array ().foreach_element ((arr, idx, node) => {
-//                  var field = Json.gobject_deserialize (typeof (Field), node) as Field;
-//                  assert (field != null);
-//                  fields.add (field);
-//              });
-//              val = fields;
-//              return true;
-//          }
-
-//          return default_deserialize_property (prop_name, out val, pspec, property_node);
-//      }
-//  }
-
-//  class EnumValue : Object {
-//      public string name { get; set; }
-//  }
-
-//  class Enum : Object, Json.Serializable {
-//      public Gee.ArrayList<EnumValue> values { get; set; }
-
-//      public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
-//          if (prop_name == "values") {
-//              var values = new Gee.ArrayList<EnumValue> ();
-//              property_node.get_array ().foreach_element ((arr, idx, node) => {
-//                  var enumvalue = Json.gobject_deserialize (typeof (EnumValue), node) as EnumValue;
-//                  assert (enumvalue != null);
-//                  values.add (enumvalue);
-//              });
-//              val = values;
-//              return true;
-//          }
-
-//          return default_deserialize_property (prop_name, out val, pspec, property_node);
-//      }
-//  }
-
-class Property : Object, Json.Serializable {
-    public string? ref_ { get; set; }
-    public string? description { get; set; }
-    public Type_? type_ { get; set; }
-
-    public override void set_property (ParamSpec pspec, Value value) {
-        switch (pspec.get_name ()) {
-            case "$ref":
-                base.set_property ("ref-", value);
-                break;
-            case "type":
-                base.set_property ("type-", value);
-                break;
-            default:
-                base.set_property (pspec.get_name (), value);
-                break;
-        }
-    }
-
-    public override unowned ParamSpec? find_property (string name) {
-        switch (name) {
-            case "type": return this.get_class ().find_property ("type-");
-            case "$ref": return this.get_class ().find_property ("ref-");
-            default:     return this.get_class ().find_property (name);
-        }
-    }
-
-    public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
-        if (prop_name == "type-") {
-            if (property_node.get_node_type () == Json.NodeType.VALUE && property_node.get_value_type () == typeof (string)) {
-                val = new TypeString (property_node.get_string ());
-                return true;
-            } else if (property_node.get_node_type () == Json.NodeType.ARRAY) {
-                string[] res = new string[property_node.get_array ().get_length ()];
-                property_node.get_array ().foreach_element ((arr, idx, node) => {
-                    res[idx] = node.get_string ();
-                });
-                val = new TypeArray (res);
-                return true;
-            }
-            return false;
-        }
-
-        return default_deserialize_property (prop_name, out val, pspec, property_node);
-    }
+public errordomain JsonError {
+    DESERIALIZATION_ERROR
 }
 
-abstract class AdditionalProperties : Object, Json.Serializable {}
+delegate T DeserializeNode<T> (Json.Node node) throws JsonError;
 
-class AdditionalPropertiesBool : AdditionalProperties {
-    public bool value;
+T[] deserializeArray<T> (Json.Array array, DeserializeNode el) throws JsonError {
+    var result = new T[array.get_length ()];
 
-    public AdditionalPropertiesBool (bool value) {
+    for (int i = 0; i < array.get_length (); ++i)
+        result[i] = el (array.get_element (i));
+
+    return result;
+}
+
+HashTable<string, T> deserializeObject<T> (Json.Object obj, DeserializeNode el) throws JsonError {
+    var result = new HashTable<string, T> (str_hash, str_equal);
+
+    foreach (string key in obj.get_members ())
+        result[key] = el (obj.get_member (key));
+
+    return result;
+}
+
+delegate string Stringify<T> (T t);
+
+abstract class OneOrMore<T> {
+    public abstract string to_string ();
+}
+
+class One<T> : OneOrMore<T> {
+    public T value;
+    private Stringify<T> stringify;
+
+    public One (T value, Stringify<T> stringify = () => "") {
         this.value = value;
+        this.stringify = stringify;
+    }
+
+    public override string to_string () {
+        return stringify (value);
     }
 }
 
-class AdditionalPropertiesObject : AdditionalProperties {
+class More<T> : OneOrMore<T> {
+    public T[] values;
+    private Stringify<T> stringify;
 
-}
-
-abstract class Type_ : Object, Json.Serializable {}
-class TypeString : Type_ {
-    public string value;
-
-    public TypeString (string value) {
-        this.value = value;
+    public More (T[] values, Stringify<T> stringify = () => "") {
+        this.values = values;
+        this.stringify = stringify;
     }
-}
-class TypeArray : Type_ {
-    public string[] value;
 
-    public TypeArray (string[] value) {
-        this.value = value;
+    public override string to_string () {
+        string res = "[";
+        foreach (T t in values)
+            res += stringify (t) + ", ";
+        return res + "]";
     }
 }
 
-class Definition : Object, Json.Serializable {
-    public AdditionalProperties additionalProperties { get; set; }
-    public string? description { get; set; }
-    public Json.Object? properties { get; set; }
-    public string[] required { get; set; }
-    public Type_? type_ { get; set; }
+class Schema : Object {
+    public OneOrMore<string>? type;
+    public Schema additionalProperties;
+    public string? description;
+    public HashTable<string, Schema>? properties;
+    public OneOrMore<Schema>? items;
+    public string[]? required;
+    public new string? ref;
+    public Schema[]? anyOf;
 
-    public override void set_property (ParamSpec pspec, Value value) {
-        if (pspec.get_name () == "type") {
-            base.set_property ("type-", value);
-        } else {
-            base.set_property (pspec.get_name (), value);
+    //  public static Schema validate_json (Json.Node)
+
+    public Schema.from_json_object (Json.Object object) throws JsonError {
+        if (object.has_member ("type")) {
+            var type = object.get_member ("type");
+            if (type.get_node_type () == Json.NodeType.ARRAY)
+                //this.type = new MultiType (deserializeArray<string> (type.get_array (), node => node.get_string ()));
+                this.type = new More<string> ({}, s => s);
+            else
+                this.type = new One<string> (type.get_string (), s => s);
         }
-    }
-
-    public override unowned ParamSpec? find_property (string name) {
-        if (name == "type") {
-            return this.get_class ().find_property ("type-");
+        if (object.has_member ("additionalProperties"))
+            this.additionalProperties = Schema.from_json (object.get_member ("additionalProperties"));
+        if (object.has_member ("description"))
+            this.description = object.get_string_member ("description");
+        if (object.has_member ("required")) {
+            //  var req = object.get_member ("required");
+            //  this.required = deserializeArray<string> (req, node => node.get_string ());
+            this.required = {};
         }
-        return this.get_class ().find_property (name);
+        if (object.has_member ("properties"))
+            this.properties = deserializeObject<Schema> (object.get_object_member ("properties"), node => Schema.from_json (node));
+        if (object.has_member ("$ref"))
+            this.ref = object.get_string_member ("$ref");
+        if (object.has_member ("items")) {
+            var items = object.get_member ("items");
+            if (items.get_node_type () == Json.NodeType.ARRAY)
+                this.items = new More<Schema> (deserializeArray<Schema> (items.get_array (), node => Schema.from_json (node)));
+            else
+                this.items = new One<Schema> (Schema.from_json (items));
+        }
+        if (object.has_member ("anyOf"))
+            this.anyOf = deserializeArray<Schema> (object.get_array_member ("anyOf"), node => Schema.from_json (node));
     }
 
-    public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
-        if (prop_name == "properties") {
-            val = property_node.get_object ();
-            return true;
-        } else if (prop_name == "additionalProperties") {
-            if (property_node.get_node_type () == Json.NodeType.VALUE && property_node.get_value_type () == typeof (bool)) {
-                val = new AdditionalPropertiesBool (property_node.get_boolean ());
-                return true;
-            } else if (property_node.get_node_type () == Json.NodeType.OBJECT) {
-                val = Json.gobject_deserialize (typeof (AdditionalPropertiesObject), property_node) as AdditionalPropertiesObject;
-                return true;
+    public static Schema from_json (Json.Node node) throws JsonError {
+        if (node.get_node_type () == Json.NodeType.VALUE && node.get_value_type () == typeof (bool)) {
+            if (node.get_boolean ())
+                return new TrueSchema ();
+            else
+                return new FalseSchema ();
+        }
+
+        if (node.get_node_type () != Json.NodeType.OBJECT)
+            throw new JsonError.DESERIALIZATION_ERROR (@"`$(Json.to_string (node, false))': Expected an object, but got a $(node.type_name ())");
+
+        var object = node.get_object ();
+        assert_nonnull(object);
+
+        return new Schema.from_json_object (object);
+    }
+
+    public string to_string () {
+        var t = type?.to_string () ?? "";
+        var ref = ref ?? "";
+        var i = items != null ? @"[$items]" : "";
+
+        string? anyOf = "";
+        if (this.anyOf != null) {
+            anyOf = "any {";
+            foreach (var opt in this.anyOf) {
+                anyOf += opt.to_string () + ", ";
             }
-            return false;
-        } else if (prop_name == "type-") {
-            if (property_node.get_node_type () == Json.NodeType.VALUE && property_node.get_value_type () == typeof (string)) {
-                val = new TypeString (property_node.get_string ());
-                return true;
-            } else if (property_node.get_node_type () == Json.NodeType.ARRAY) {
-                string[] res = new string[property_node.get_array ().get_length ()];
-                property_node.get_array ().foreach_element ((arr, idx, node) => {
-                    res[idx] = node.get_string ();
-                });
-                val = new TypeArray (res);
-                return true;
-            }
-            return false;
+            anyOf += "}";
         }
 
-        return default_deserialize_property (prop_name, out val, pspec, property_node);
+        return @"$t $ref $i $anyOf";
     }
 }
+
+// JsonSchema 4.3.2
+class TrueSchema : Schema { }
+// JsonSchema 4.3.2
+class FalseSchema : Schema { }
 
 
 string typeToClassName (string typeName) {
@@ -205,11 +154,17 @@ string typeToClassName (string typeName) {
     }
 }
 
-string typeNameToVala (string typeName) {
-    if (typeName == "array") {
-        return "Gee.ArrayList<>";
-    }
-    return typeToClassName (typeName);
+string typeNameToVala (Schema schema) {
+    var singleType = (schema.type is One) ? ((One<string>) schema.type).value : null;
+
+    if (singleType == "array" && schema.items is One)
+        return @"GLib.Array<$(typeNameToVala (((One<Schema>) schema.items).value))>";
+    else if (schema.ref != null) 
+        return typeToClassName (parseRef (schema.ref));
+    else if (singleType != null)
+        return typeToClassName (singleType);
+    else
+        return @"TODO /* $schema */";
 }
 
 const string[] reservedWords = {
@@ -217,10 +172,9 @@ const string[] reservedWords = {
 };
 
 const string[] primitiveTypes = {
-    "bool",
-};
-
-const string[] openapiTypes = {
+    "null",
+    "object",
+    "array",
     "string",
     "number",
     "boolean",
@@ -241,158 +195,41 @@ string? parseRef (string reference) {
     return null;
 }
 
-void generateModel (FileStream output, string name, Definition def) {
-    //  output.printf (@"$name - ");
-    //  if (def.type_ == null) {
-    //      output.printf ("??? ");
-    //  } else if (def.type_ is TypeString) {
-    //      output.printf ("just " + ((TypeString) def.type_).value + " ");
-    //  } else {
-    //      output.printf ("first " + ((TypeArray)def.type_).value[0] + " ");
-    //  }
+string starEveryLine (string description) {
+    string[] lines = description.split ("\n");
+    string result = "";
 
-    //  if (def.additionalProperties is AdditionalPropertiesBool) {
-    //      output.printf (((AdditionalPropertiesBool) def.additionalProperties).value.to_string () + "\n");
-    //  } else {
-    //      output.printf ("object\n");
-    //  }
+    foreach (unowned string line in lines)
+        result += "* " + line;
+    
+    return result;
+}
 
-    //  if (def.properties != null) {
-    //      def.properties.foreach_member ((obj, name, node) => {
-    //          output.printf (@"\t$name\n");
-    //      });
-    //  }
-
-    if (def.description != null) {
+void generateModel (FileStream output, string name, Schema schema) {
+    if (schema.description != null) {
         output.printf (@"/**
-                          * $(def.description)
+                          $(starEveryLine (schema.description))
                           */\n");
     }
-    output.printf(@"class $(typeToClassName (name)) : GLib.Object, Json.Serializable {\n");
+    output.printf(@"class $(typeToClassName (name)) : GLib.Object {\n");
 
-    if (def.properties != null) {
-        def.properties.foreach_member ((obj, name, node) => {
-            var prop = Json.gobject_deserialize (typeof (Property), node) as Property;
-
-            if (prop.description != null) {
+    if (schema.properties != null) {
+        schema.properties.foreach ((name, schema) => {
+            if (schema.description != null) {
                 output.printf (@"/**
-                                  * $(prop.description)
+                                  $(starEveryLine (schema.description))
                                   */\n");
             }
 
-            string typeName;
-            if (prop.type_ is TypeString) {
-                var typeStr = ((TypeString)prop.type_).value;
-                typeName = typeNameToVala (typeStr);
-            } else if (prop.type_ is TypeArray) {
-                info ("union types not supported yet\n");
-                return;
-            } else if (prop.ref_ != null) {
-                var modelName = parseRef (prop.ref_);
-                typeName = typeNameToVala (modelName);
-            } else {
-                info (@"unknown type for property $name");
-                return;
-            }
-
-            bool required = name in def.required;
-            var requiredModifier = "";
-            if (!required) {
-                // && field.default == null {
-                if (typeName in primitiveTypes) {
-                    requiredModifier = "*";
-                } else {
-                    requiredModifier = "?";
-                }
-            }
-            output.printf (@"public $(typeName)$(requiredModifier) $(validVariableName(name)) { get; set; }\n");
+            debug (@"$name: $schema");
+            string typeName = typeNameToVala (schema);
+            bool required = name in schema.required;
+            output.printf (@"public $(typeName)$(required ? "?" : "") $(validVariableName(name));\n");
         });
     }
 
-    //      foreach (Field field in model.fields) {
-    //      }
-
-    //      if (model.fields.any_match (field => field.name in reservedWords)) {
-    //          setProperty (output, model);
-
-    //          findProperty (output, model);
-    //      }
-
-    //      if (model.fields.any_match (f => arrayType (f.type_) != null)) {
-    //          output.printf ("public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
-    //                              switch (prop_name) {\n");
-    //          foreach (Field field in model.fields) {
-    //              deserializeField (output, field);
-    //          }
-    //          output.printf ("default:
-    //                              return default_deserialize_property (prop_name, out val, pspec, property_node);
-    //                          }
-    //                      }\n");
-    //      }
-
     output.printf ("}\n\n");
 }
-
-//  void deserializeField (FileStream output, Field field) {
-//      string t;
-//      if ((t = arrayType (field.type_)) == null) {
-//          return;
-//      }
-
-//      string className = typeToClassName (t);
-
-//      output.printf (@"case \"$(field.name)\":\n");
-//      output.printf (@"var res = new Gee.ArrayList<$className> ();\n");
-//      output.printf ( "property_node.get_array ().foreach_element ((arr, idx, node) => {\n");
-//      if (t == "string") {
-//          output.printf ( "    res.add (node.get_string ());\n");
-//      } else if (t == "number") {
-//          output.printf ( "    res.add (node.get_number ());\n");
-//      } else if (t == "boolean") {
-//          output.printf ( "    res.add (node.get_boolean ());\n");
-//      } else {
-//          output.printf (@"    var item = Json.gobject_deserialize (typeof ($className), node) as $className;\n");
-//          output.printf ( "    assert (item != null);\n");
-//          output.printf ( "    res.add (item);\n");
-//      }
-//      output.printf ( "});\n");
-//      output.printf ( "val = res;\n");
-//      output.printf ( "return true;\n");
-//  }
-
-//  void setProperty (FileStream output, Model model) {
-//      output.printf ("public override void set_property (ParamSpec pspec, Value value) {
-//                      switch (pspec.get_name ()) {");
-//      foreach (Field field in model.fields) {
-//          if (field.name in reservedWords) {
-//              output.printf (@"case \"$(field.name)\":
-//                                  base.set_property (\"$(validVariableName (field.name))\", value);
-//                                  break;\n");
-//          }
-//      }
-//      output.printf ("
-//              default:
-//                  base.set_property (pspec.get_name (), value);
-//                  break;
-//          }
-//      }");
-//  }
-
-//  void findProperty (FileStream output, Model model) {
-//      output.printf ("public override unowned ParamSpec? find_property (string name) {
-//                      switch (name) {\n");
-//      foreach (Field field in model.fields) {
-//          if (field.name in reservedWords) {
-//              output.printf (@"case \"$(field.name)\":
-//                                  return this.get_class ().find_property (\"$(validVariableName (field.name))\");\n");
-//          }
-//      }
-//      output.printf ("
-//              default:
-//                  return this.get_class ().find_property (name);
-//          }
-//      }");
-//  }
 
 int main(string[] args) {
     var parser = new Json.Parser ();
@@ -411,68 +248,14 @@ Autogenerated by vala-gen-json 0.0.1
 https://github.com/benwaffle/vala-gen-json)
 */""");
 
-    output.printf ("\nnamespace Apibuilder {\n");
+    output.printf ("\nnamespace TODO {\n");
 
     Json.Object? definitions = parser.get_root ().get_object ().get_object_member ("definitions");
     definitions.foreach_member ((obj, name, node) => {
-        var def = Json.gobject_deserialize (typeof (Definition), node) as Definition;
+        //  debug (Json.to_string (node, true));
+        var def = Schema.from_json (node);
         generateModel (output, name, def);
-
-        //  output.printf (@"enum $(typeToClassName (member)) {\n");
-        //  foreach (EnumValue value in enum.values) {
-        //      output.printf (@"$(value.name.up ()),\n");
-        //  }
-        //  output.printf ("}\n");
     });
-
-    //  Json.Object? models = parser.get_root ().get_object ().get_object_member ("models");
-    //  models.foreach_member ((obj, member, node) => {
-    //      var model = Json.gobject_deserialize (typeof (Model), node) as Model;
-
-    //      if (model.description != null) {
-    //          output.printf (@"/**
-    //                            * $(model.description)
-    //                            */\n");
-    //      }
-    //      output.printf(@"class $(typeToClassName (member)) : GLib.Object, Json.Serializable {\n");
-    //      foreach (Field field in model.fields) {
-    //          if (field.description != null) {
-    //              output.printf (@"/**
-    //                                * $(field.description)
-    //                                */\n");
-    //          }
-    //          var typeName = typeNameToVala (field.type_);
-    //          var requiredModifier = "";
-    //          if (!field.required && field.default == null) {
-    //              if (typeName in primitiveTypes) {
-    //                  requiredModifier = "*";
-    //              } else {
-    //                  requiredModifier = "?";
-    //              }
-    //          }
-    //          output.printf (@"public $(typeNameToVala (field.type_))$(field.required ? "" : "?") $(validVariableName(field.name)) { get; set; }\n");
-    //      }
-
-    //      if (model.fields.any_match (field => field.name in reservedWords)) {
-    //          setProperty (output, model);
-
-    //          findProperty (output, model);
-    //      }
-
-    //      if (model.fields.any_match (f => arrayType (f.type_) != null)) {
-    //          output.printf ("public override bool deserialize_property (string prop_name, out Value val, ParamSpec pspec, Json.Node property_node) {
-    //                              switch (prop_name) {\n");
-    //          foreach (Field field in model.fields) {
-    //              deserializeField (output, field);
-    //          }
-    //          output.printf ("default:
-    //                              return default_deserialize_property (prop_name, out val, pspec, property_node);
-    //                          }
-    //                      }\n");
-    //      }
-
-    //      output.printf ("}\n");
-    //  });
 
     output.printf ("}\n");
 

@@ -2,10 +2,12 @@
 
 Generate vala classes with json-glib-1.0 serialization and deserialization support
 
-Uses a subset of the [apibuilder specification](https://app.apibuilder.io/doc/apiJson)
+Input is in JSON Schema format
 
 ## Testing
 
 ```
-ninja -C build && G_MESSAGES_DEBUG=all ./build/meson-out/vala-gen-json spec/apibuilder-spec.json /dev/stdout | uncrustify -c uncrustify.vala.cfg -l vala
+G_DEBUG=fatal-criticals
+G_MESSAGES_DEBUG=all
+ninja -C build && ./build/vala-gen-json spec/langserver.json /dev/stdout | uncrustify -c vls.cfg -l vala | bat -l cs
 ```

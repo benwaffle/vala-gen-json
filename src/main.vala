@@ -75,6 +75,7 @@ class Schema : Object {
         if (object.has_member ("type")) {
             var type = object.get_member ("type");
             if (type.get_node_type () == Json.NodeType.ARRAY)
+                // https://gitlab.gnome.org/GNOME/vala/-/issues/1342
                 //this.type = new MultiType (deserializeArray<string> (type.get_array (), node => node.get_string ()));
                 this.type = new More<string> ({}, s => s);
             else
@@ -86,6 +87,7 @@ class Schema : Object {
             this.description = object.get_string_member ("description");
         if (object.has_member ("required")) {
             //  var req = object.get_member ("required");
+            // https://gitlab.gnome.org/GNOME/vala/-/issues/1342
             //  this.required = deserializeArray<string> (req, node => node.get_string ());
             this.required = {};
         }

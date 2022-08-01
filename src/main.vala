@@ -4,7 +4,7 @@ public errordomain JsonError {
 
 delegate T DeserializeNode<T> (Json.Node node) throws JsonError;
 
-T[] deserializeArray<T> (Json.Array array, DeserializeNode el) throws JsonError {
+T[] deserializeArray<T> (Json.Array array, DeserializeNode<T> el) throws JsonError {
     var result = new T[array.get_length ()];
 
     for (int i = 0; i < array.get_length (); ++i)
@@ -13,7 +13,7 @@ T[] deserializeArray<T> (Json.Array array, DeserializeNode el) throws JsonError 
     return result;
 }
 
-HashTable<string, T> deserializeObject<T> (Json.Object obj, DeserializeNode el) throws JsonError {
+HashTable<string, T> deserializeObject<T> (Json.Object obj, DeserializeNode<T> el) throws JsonError {
     var result = new HashTable<string, T> (str_hash, str_equal);
 
     foreach (string key in obj.get_members ())
@@ -75,9 +75,10 @@ class Schema : Object {
         if (object.has_member ("type")) {
             var type = object.get_member ("type");
             if (type.get_node_type () == Json.NodeType.ARRAY)
-                // https://gitlab.gnome.org/GNOME/vala/-/issues/1342
-                //this.type = new MultiType (deserializeArray<string> (type.get_array (), node => node.get_string ()));
-                this.type = new More<string> ({}, s => s);
+                this.type = new More<string> (
+                    deserializeArray<string> (type.get_array (), node => node.get_string ()),
+                    s => s
+                );
             else
                 this.type = new One<string> (type.get_string (), s => s);
         }
@@ -86,10 +87,8 @@ class Schema : Object {
         if (object.has_member ("description"))
             this.description = object.get_string_member ("description");
         if (object.has_member ("required")) {
-            //  var req = object.get_member ("required");
-            // https://gitlab.gnome.org/GNOME/vala/-/issues/1342
-            //  this.required = deserializeArray<string> (req, node => node.get_string ());
-            this.required = {};
+            var req = object.get_array_member ("required");
+            this.required = deserializeArray<string> (req, node => node.get_string ());
         }
         if (object.has_member ("properties"))
             this.properties = deserializeObject<Schema> (object.get_object_member ("properties"), node => Schema.from_json (node));
@@ -137,7 +136,15 @@ class Schema : Object {
             anyOf += "}";
         }
 
-        return @"$t $ref $i $anyOf";
+        string? req = "";
+        if (this.required != null) {
+            req = "[";
+            foreach (var str in required)
+                req += @"!$str, ";
+            req += "]";
+        }
+
+        return @"$t $ref $i $anyOf $req";
     }
 }
 

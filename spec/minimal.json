@@ -1,0 +1,15 @@
+{
+    "$schema": "http://json-schema.org/schema",
+    "type": "object",
+    "definitions": {
+        "hello": {
+            "type": "object",
+            "properties": {
+                "hello": {
+                    "type": "integer"
+                }
+            },
+            "required": []
+        }
+    }
+}

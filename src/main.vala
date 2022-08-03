@@ -159,6 +159,7 @@ string typeToClassName (string typeName) {
         case "string": return "string";
         case "boolean": return "bool";
         case "number": return "double";
+        case "integer": return "int";
         default: return /(?:^|_)(.)/.replace (typeName, -1, 0, "\\U\\1");
     }
 }
@@ -223,17 +224,17 @@ void generateModel (FileStream output, string name, Schema schema) {
     output.printf(@"class $(typeToClassName (name)) : GLib.Object {\n");
 
     if (schema.properties != null) {
-        schema.properties.foreach ((name, schema) => {
-            if (schema.description != null) {
+        schema.properties.foreach ((name, type) => {
+            if (type.description != null) {
                 output.printf (@"/**
                                   $(starEveryLine (schema.description))
                                   */\n");
             }
 
-            debug (@"$name: $schema");
-            string typeName = typeNameToVala (schema);
+            debug (@"$name: $type");
+            string typeName = typeNameToVala (type);
             bool required = name in schema.required;
-            output.printf (@"public $(typeName)$(required ? "?" : "") $(validVariableName(name));\n");
+            output.printf (@"public $(typeName)$(required ? "" : "?") $(validVariableName(name));\n");
         });
     }
 

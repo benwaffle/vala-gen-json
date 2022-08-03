@@ -2,6 +2,16 @@ public errordomain JsonError {
     DESERIALIZATION_ERROR
 }
 
+struct ValaType {
+    string name;
+    bool nullable;
+
+    public string to_string (){
+        string q = nullable ? "?" : "";
+        return name + q;
+    }
+}
+
 delegate T DeserializeNode<T> (Json.Node node) throws JsonError;
 
 T[] deserializeArray<T> (Json.Array array, DeserializeNode<T> el) throws JsonError {
@@ -164,17 +174,29 @@ string typeToClassName (string typeName) {
     }
 }
 
-string typeNameToVala (Schema schema) {
-    var singleType = (schema.type is One) ? ((One<string>) schema.type).value : null;
+/** If this type is really just [xyz, null], then return `xyz?` */
+ValaType? getNullableType (More<string> types) {
+    if (types.values.length == 2) {
+        if (types.values[0] == "null") return {typeToClassName (types.values[1]), true};
+        if (types.values[1] == "null") return {typeToClassName (types.values[0]), true};
+    }
+    return null;
+}
+
+ValaType typeNameToVala (Schema schema) {
+    string? singleType = (schema.type is One) ? ((One<string>) schema.type).value : null;
+    ValaType? nullableType = (schema.type is More) ? getNullableType ((More<string>) schema.type) : null;
 
     if (singleType == "array" && schema.items is One)
-        return @"GLib.Array<$(typeNameToVala (((One<Schema>) schema.items).value))>";
+        return {@"GLib.Array<$(typeNameToVala (((One<Schema>) schema.items).value))>", false};
     else if (schema.ref != null) 
-        return typeToClassName (parseRef (schema.ref));
+        return {typeToClassName (parseRef (schema.ref)), false};
     else if (singleType != null)
-        return typeToClassName (singleType);
+        return {typeToClassName (singleType)};
+    else if (nullableType != null)
+        return nullableType;
     else
-        return @"TODO /* $schema */";
+        return {@"TODO /* $schema */", false};
 }
 
 const string[] reservedWords = {
@@ -232,9 +254,9 @@ void generateModel (FileStream output, string name, Schema schema) {
             }
 
             debug (@"$name: $type");
-            string typeName = typeNameToVala (type);
-            bool required = name in schema.required;
-            output.printf (@"public $(typeName)$(required ? "" : "?") $(validVariableName(name));\n");
+            ValaType valaType = typeNameToVala (type);
+            bool nullable = valaType.nullable || !(name in schema.required);
+            output.printf (@"public $(valaType.name)$(nullable ? "?" : "") $(validVariableName(name));\n");
         });
     }
 

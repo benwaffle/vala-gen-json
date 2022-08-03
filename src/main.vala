@@ -12,7 +12,7 @@ struct ValaType {
     }
 
     public bool isPolymorphic (){
-        return name == "Value";
+        return name == "GLib.Value";
     }
 }
 
@@ -222,7 +222,7 @@ ValaType typeNameToVala (Schema schema) {
     else if (nullableType != null)
         return nullableType;
     else
-        return {"Value", false};
+        return {"GLib.Value", false};
 }
 
 const string[] reservedWords = {

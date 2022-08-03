@@ -10,6 +10,10 @@ struct ValaType {
         string q = nullable ? "?" : "";
         return name + q;
     }
+
+    public bool isPolymorphic (){
+        return name == "Value";
+    }
 }
 
 delegate T DeserializeNode<T> (Json.Node node) throws JsonError;
@@ -163,6 +167,28 @@ class TrueSchema : Schema { }
 // JsonSchema 4.3.2
 class FalseSchema : Schema { }
 
+string describePossibleSchemaTypes(Schema schema)
+    requires(schema.type is More || schema.anyOf != null)
+{
+    if (schema.type is More) {
+        More<string> types = (More) schema.type;
+
+        string options = typeToClassName (types.values[0]);
+
+        for (int i = 1; i < types.values.length; ++i)
+            options += ", " + typeToClassName (types.values[i]);
+        
+        return options;
+    } else {
+        Schema[] schemas = schema.anyOf;
+        string options = schemas[0].to_string ();
+
+        for (int i = 1; i < schemas.length; ++i)
+            options += ", " + schemas[i].to_string ();
+        
+        return options;
+    }
+}
 
 string typeToClassName (string typeName) {
     switch (typeName) {
@@ -196,7 +222,7 @@ ValaType typeNameToVala (Schema schema) {
     else if (nullableType != null)
         return nullableType;
     else
-        return {@"TODO /* $schema */", false};
+        return {"Value", false};
 }
 
 const string[] reservedWords = {
@@ -247,14 +273,24 @@ void generateModel (FileStream output, string name, Schema schema) {
 
     if (schema.properties != null) {
         schema.properties.foreach ((name, type) => {
-            if (type.description != null) {
-                output.printf (@"/**
-                                  $(starEveryLine (type.description))
-                                  */\n");
-            }
-
             debug (@"$name: $type");
             ValaType valaType = typeNameToVala (type);
+
+            string desc = "";
+            if (type.description != null) {
+                desc += starEveryLine (type.description);
+                if (valaType.isPolymorphic ())
+                    desc += "\n* \n";
+            }
+            if (valaType.isPolymorphic ()) {
+                desc += @"* Possible types: $(describePossibleSchemaTypes(type))";
+            }
+
+            if (desc.length > 0)
+                output.printf(@"/**
+                                $desc
+                                */\n");
+
             bool nullable = valaType.nullable || !(name in schema.required);
             output.printf (@"public $(valaType.name)$(nullable ? "?" : "") $(validVariableName(name));\n");
         });

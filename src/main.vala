@@ -227,7 +227,7 @@ void generateModel (FileStream output, string name, Schema schema) {
         schema.properties.foreach ((name, type) => {
             if (type.description != null) {
                 output.printf (@"/**
-                                  $(starEveryLine (schema.description))
+                                  $(starEveryLine (type.description))
                                   */\n");
             }
 

@@ -115,8 +115,10 @@ class Schema : Object {
             else
                 this.items = new One<Schema> (Schema.from_json (items));
         }
-        if (object.has_member ("anyOf"))
+        if (object.has_member ("anyOf")) {
+            assert(object.get_array_member ("anyOf").get_length () > 0);
             this.anyOf = deserializeArray<Schema> (object.get_array_member ("anyOf"), node => Schema.from_json (node));
+        }
     }
 
     public static Schema from_json (Json.Node node) throws JsonError {
@@ -209,20 +211,33 @@ ValaType? getNullableType (More<string> types) {
     return null;
 }
 
-ValaType typeNameToVala (Schema schema) {
+ValaType? typeNameToVala (Schema schema) {
     string? singleType = (schema.type is One) ? ((One<string>) schema.type).value : null;
     ValaType? nullableType = (schema.type is More) ? getNullableType ((More<string>) schema.type) : null;
 
-    if (singleType == "array" && schema.items is One)
-        return {@"GLib.Array<$(typeNameToVala (((One<Schema>) schema.items).value))>", false};
+    //  debug (@"%s - single[%s] nullable[%s]", singleType, nullableType?.to_string ());
+
+    if (singleType == "array" && schema.items is One) {
+        var itemType = ((One<Schema>) schema.items).value;
+        var itemValaType = typeNameToVala (itemType);
+        //  debug (@"array[$schema] ==> items[$itemType]");
+        if (itemValaType == null)
+            return null;
+        return {@"GLib.Array<$itemValaType>", false};
+    } else if (singleType == "object")
+        return {@"GLib.HashTable<string, GLib.Value>", false};
     else if (schema.ref != null) 
         return {typeToClassName (parseRef (schema.ref)), false};
     else if (singleType != null)
         return {typeToClassName (singleType)};
     else if (nullableType != null)
         return nullableType;
-    else
+    else if (schema.anyOf != null || schema.type is More)
         return {"GLib.Value", false};
+    else {
+        debug ("uh oh, no type info");
+        return null;
+    }
 }
 
 const string[] reservedWords = {
@@ -274,7 +289,13 @@ void generateModel (FileStream output, string name, Schema schema) {
     if (schema.properties != null) {
         schema.properties.foreach ((name, type) => {
             debug (@"$name: $type");
-            ValaType valaType = typeNameToVala (type);
+
+            ValaType? valaType = typeNameToVala (type);
+
+            if (valaType == null) {
+                output.printf(@"/* field [$name] with no type information */\n");
+                return;
+            }
 
             string desc = "";
             if (type.description != null) {
@@ -283,6 +304,7 @@ void generateModel (FileStream output, string name, Schema schema) {
                     desc += "\n* \n";
             }
             if (valaType.isPolymorphic ()) {
+                debug (@"polymorhpic: $name $type");
                 desc += @"* Possible types: $(describePossibleSchemaTypes(type))";
             }
 

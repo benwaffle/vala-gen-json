@@ -85,42 +85,6 @@ class Schema : Object {
 
     //  public static Schema validate_json (Json.Node)
 
-    public Schema.from_json_object (Json.Object object) throws JsonError {
-        if (object.has_member ("type")) {
-            var type = object.get_member ("type");
-            if (type.get_node_type () == Json.NodeType.ARRAY)
-                this.type = new More<string> (
-                    deserializeArray<string> (type.get_array (), node => node.get_string ()),
-                    s => s
-                );
-            else
-                this.type = new One<string> (type.get_string (), s => s);
-        }
-        if (object.has_member ("additionalProperties"))
-            this.additionalProperties = Schema.from_json (object.get_member ("additionalProperties"));
-        if (object.has_member ("description"))
-            this.description = object.get_string_member ("description");
-        if (object.has_member ("required")) {
-            var req = object.get_array_member ("required");
-            this.required = deserializeArray<string> (req, node => node.get_string ());
-        }
-        if (object.has_member ("properties"))
-            this.properties = deserializeObject<Schema> (object.get_object_member ("properties"), node => Schema.from_json (node));
-        if (object.has_member ("$ref"))
-            this.ref = object.get_string_member ("$ref");
-        if (object.has_member ("items")) {
-            var items = object.get_member ("items");
-            if (items.get_node_type () == Json.NodeType.ARRAY)
-                this.items = new More<Schema> (deserializeArray<Schema> (items.get_array (), node => Schema.from_json (node)));
-            else
-                this.items = new One<Schema> (Schema.from_json (items));
-        }
-        if (object.has_member ("anyOf")) {
-            assert(object.get_array_member ("anyOf").get_length () > 0);
-            this.anyOf = deserializeArray<Schema> (object.get_array_member ("anyOf"), node => Schema.from_json (node));
-        }
-    }
-
     public static Schema from_json (Json.Node node) throws JsonError {
         if (node.get_node_type () == Json.NodeType.VALUE && node.get_value_type () == typeof (bool)) {
             if (node.get_boolean ())
@@ -135,7 +99,43 @@ class Schema : Object {
         var object = node.get_object ();
         assert_nonnull(object);
 
-        return new Schema.from_json_object (object);
+        var schema = new Schema ();
+
+        if (object.has_member ("type")) {
+            var type = object.get_member ("type");
+            if (type.get_node_type () == Json.NodeType.ARRAY)
+                schema.type = new More<string> (
+                    deserializeArray<string> (type.get_array (), node => node.get_string ()),
+                    s => s
+                );
+            else
+                schema.type = new One<string> (type.get_string (), s => s);
+        }
+        if (object.has_member ("additionalProperties"))
+            schema.additionalProperties = Schema.from_json (object.get_member ("additionalProperties"));
+        if (object.has_member ("description"))
+            schema.description = object.get_string_member ("description");
+        if (object.has_member ("required")) {
+            var req = object.get_array_member ("required");
+            schema.required = deserializeArray<string> (req, node => node.get_string ());
+        }
+        if (object.has_member ("properties"))
+            schema.properties = deserializeObject<Schema> (object.get_object_member ("properties"), node => Schema.from_json (node));
+        if (object.has_member ("$ref"))
+            schema.ref = object.get_string_member ("$ref");
+        if (object.has_member ("items")) {
+            var items = object.get_member ("items");
+            if (items.get_node_type () == Json.NodeType.ARRAY)
+                schema.items = new More<Schema> (deserializeArray<Schema> (items.get_array (), node => Schema.from_json (node)));
+            else
+                schema.items = new One<Schema> (Schema.from_json (items));
+        }
+        if (object.has_member ("anyOf")) {
+            assert(object.get_array_member ("anyOf").get_length () > 0);
+            schema.anyOf = deserializeArray<Schema> (object.get_array_member ("anyOf"), node => Schema.from_json (node));
+        }
+
+        return schema;
     }
 
     public string to_string () {
@@ -198,7 +198,12 @@ string typeToClassName (string typeName) {
         case "boolean": return "bool";
         case "number": return "double";
         case "integer": return "int";
-        default: return /(?:^|_)(.)/.replace (typeName, -1, 0, "\\U\\1");
+        default:
+          try {
+              return /(?:^|_)(.)/.replace (typeName, -1, 0, "\\U\\1");
+          } catch (RegexError e) {
+              assert_not_reached ();
+          }
     }
 }
 

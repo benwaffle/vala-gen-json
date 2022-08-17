@@ -97,7 +97,7 @@ class Schema : Object {
             throw new JsonError.DESERIALIZATION_ERROR (@"`$(Json.to_string (node, false))': Expected an object, but got a $(node.type_name ())");
 
         var object = node.get_object ();
-        assert_nonnull(object);
+        assert_nonnull (object);
 
         var schema = new Schema ();
 
@@ -283,6 +283,55 @@ string starEveryLine (string description) {
     return result;
 }
 
+void deserializeField (FileStream output, string fieldName, Schema fieldSchema) {
+    output.printf ("{\n");
+
+    var singleType = (fieldSchema.type is One)
+        ? ((One<string>) fieldSchema.type).value
+        : null;
+
+    if (singleType == "string")
+        output.printf (@"result.$fieldName = object.get_string_member (\"$fieldName\");\n");
+
+    output.printf ("}\n");
+}
+
+void generateDeserializationFunction (FileStream output, ValaType type, Schema schema) {
+    output.printf (@"public static $(type) fromJson (Json.Node node) throws JsonError {
+
+        if (node.get_node_type () != Json.NodeType.OBJECT)
+            throw new JsonError.DESERIALIZATION_ERROR (@\"$(type): Expected an object, but got a $$(node.type_name ())\");
+
+        var object = node.get_object ();
+        assert_nonnull (object);
+
+        var result = new $(type) ();
+    ");
+
+    assert_nonnull (schema.properties);
+
+    schema.properties.foreach ((fieldName, fieldSchema) => {
+
+        if (fieldName in schema.required) {
+
+            output.printf (@"
+                if (!object.has_member (\"$fieldName\"))
+                    throw new JsonError.VALIDATION_ERROR (\"Missing required field $fieldName\");
+            ");
+            deserializeField (output, fieldName, fieldSchema);
+
+        } else {
+
+            output.printf (@"if (object.has_member (\"$fieldName\"))\n");
+            deserializeField (output, fieldName, fieldSchema);
+
+        }
+
+    });
+
+    output.printf ("}");
+}
+
 void generateModel (FileStream output, string name, Schema schema) {
     if (schema.description != null) {
         output.printf (@"/**
@@ -322,6 +371,8 @@ void generateModel (FileStream output, string name, Schema schema) {
             output.printf (@"public $(valaType.name)$(nullable ? "?" : "") $(validVariableName(name));\n");
         });
     }
+
+    generateDeserializationFunction (output, {typeToClassName (name)}, schema);
 
     output.printf ("}\n\n");
 }
